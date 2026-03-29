@@ -26,13 +26,9 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     app.add_handler(CallbackQueryHandler(button))
     
-    # مسح أي webhooks قديمة قبل البدء
-    logger.info("🔄 جاري مسح الـ webhooks القديمة...")
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    
     logger.info("✅ البوت يعمل...")
     
-    # بدء البوت مع polling
+    # بدء البوت
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
