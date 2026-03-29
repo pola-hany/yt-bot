@@ -16,12 +16,12 @@ MAX_FILE_SIZE_MB: int = 50
 DOWNLOAD_DIR: str    = "downloads"
 
 # ─── جودات الفيديو ───────────────────────────────────────────────────────────
-# نستخدم fallback تلقائي بـ / لو الجودة المطلوبة مش متاحة
+# كل سطر بيجرّب أكثر من صيغة بالترتيب لو الأولى مش متاحة
 VIDEO_QUALITIES: dict = {
-    "144p": "bestvideo[height<=144][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=144]+bestaudio/best[height<=144]/best",
-    "360p": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]/best",
-    "720p": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-    "best": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+    "144p": "bestvideo[height<=144]+bestaudio/best[height<=144]/best",
+    "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+    "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+    "best": "bestvideo+bestaudio/best",
 }
 
 # ─── إعدادات الصوت ───────────────────────────────────────────────────────────

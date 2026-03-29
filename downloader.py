@@ -27,20 +27,21 @@ MAX_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 def _base_opts() -> dict:
     """الخيارات المشتركة لجميع عمليات التحميل."""
     opts = {
-        "noplaylist":    True,
-        "quiet":         True,
-        "no_warnings":   True,
+        "noplaylist":     True,
+        "quiet":          True,
+        "no_warnings":    True,
         "socket_timeout": 30,
-        # استخدام ios client — الأقل عرضة للحظر بدون cookies
+        # tv_embedded + mweb يعملان بدون cookies ويتجاوزان "Sign in to confirm"
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "web"],
+                "player_client": ["tv_embedded", "mweb"],
             }
         },
         "http_headers": {
             "User-Agent": (
-                "com.google.ios.youtube/19.45.4 "
-                "(iPhone16,2; U; CPU iPhone OS 18_1_0 like Mac OS X)"
+                "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) "
+                "AppleWebKit/538.1 (KHTML, like Gecko) "
+                "Version/6.0 TV Safari/538.1"
             ),
             "Accept-Language": "en-US,en;q=0.9",
         },
