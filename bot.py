@@ -1,44 +1,51 @@
-import os
+import logging
+import asyncio
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-import yt_dlp
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from config import TOKEN
+from handlers import start, handle_url, button
 
-TOKEN = os.getenv("TOKEN")
+# إعداد التسجيل
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ابعت لينك فيديو من يوتيوب 🎥")
-
-async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text.strip()
-
-    await update.message.reply_text("جاري التحميل... ⏳")
-
-    try:
-        ydl_opts = {
-            'format': 'best[ext=mp4]',
-            'outtmpl': 'video.%(ext)s',
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-
-        with open(filename, 'rb') as video:
-            await update.message.reply_video(video)
-
-        os.remove(filename)
-
-    except Exception as e:
-        print(e)
-        await update.message.reply_text("حصل مشكلة 😢")
-
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-
+async def main():
+    """تشغيل البوت"""
+    if not TOKEN:
+        logger.error("❌ لم يتم تعيين BOT_TOKEN في متغيرات البيئة")
+        return
+    
+    # إنشاء التطبيق
+    app = Application.builder().token(TOKEN).build()
+    
+    # إضافة المعالجات
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_video))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
+    app.add_handler(CallbackQueryHandler(button))
+    
+    # مسح أي webhooks قديمة قبل البدء
+    logger.info("🔄 جاري مسح الـ webhooks القديمة...")
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    
+    logger.info("✅ البوت يعمل...")
+    
+    # بدء البوت مع polling
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    
+    # البقاء قيد التشغيل
+    try:
+        await asyncio.get_event_loop().create_future()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        await app.updater.stop()
+        await app.stop()
+        await app.shutdown()
 
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    asyncio.run(main())
