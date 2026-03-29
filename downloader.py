@@ -13,74 +13,54 @@ import yt_dlp
 
 from config import (
     DOWNLOAD_DIR, VIDEO_QUALITIES, AUDIO_FORMAT, AUDIO_QUALITY,
-    MAX_FILE_SIZE_MB, COOKIES_FILE, COOKIES_FROM_BROWSER,
+    MAX_FILE_SIZE_MB, prepare_cookies,
 )
 from utils import ensure_download_dir, human_readable_size
 
 logger = logging.getLogger(__name__)
 
-# الحد الأقصى للحجم بالبايت
 MAX_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 
-# ─── بناء خيارات الـ Cookies ─────────────────────────────────────────────────
-
-def _cookies_opts() -> dict:
-    """
-    أرجع خيارات الـ cookies المناسبة حسب الإعداد في config.py.
-
-    الأولوية:
-    1. cookies_from_browser  (جهاز محلي)
-    2. cookiefile            (ملف يدوي — مناسب للسيرفر)
-    3. لا شيء                (بدون cookies)
-    """
-    if COOKIES_FROM_BROWSER:
-        logger.info(f"🍪 استخدام cookies من المتصفح: {COOKIES_FROM_BROWSER}")
-        return {"cookiesfrombrowser": (COOKIES_FROM_BROWSER,)}
-
-    if COOKIES_FILE and os.path.exists(COOKIES_FILE):
-        logger.info(f"🍪 استخدام ملف cookies: {COOKIES_FILE}")
-        return {"cookiefile": COOKIES_FILE}
-
-    logger.warning("⚠️ لا توجد cookies — قد يفشل التحميل لبعض الفيديوهات")
-    return {}
-
-
-# ─── إعدادات yt-dlp المشتركة ─────────────────────────────────────────────────
+# ─── بناء الخيارات الأساسية ──────────────────────────────────────────────────
 
 def _base_opts() -> dict:
-    """الخيارات الأساسية المشتركة بين تحميل الفيديو والصوت."""
+    """الخيارات المشتركة لجميع عمليات التحميل."""
     opts = {
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
+        "noplaylist":    True,
+        "quiet":         True,
+        "no_warnings":   True,
         "socket_timeout": 30,
-        # إعدادات لتقليل احتمال الحظر
-        "extractor_args": {"youtube": {"player_client": ["web"]}},
+        # استخدام ios client — الأقل عرضة للحظر بدون cookies
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["ios", "web"],
+            }
+        },
         "http_headers": {
             "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
+                "com.google.ios.youtube/19.45.4 "
+                "(iPhone16,2; U; CPU iPhone OS 18_1_0 like Mac OS X)"
             ),
             "Accept-Language": "en-US,en;q=0.9",
         },
     }
-    opts.update(_cookies_opts())
+
+    # أضف cookies إن وُجدت
+    cookie_path = prepare_cookies()
+    if cookie_path:
+        opts["cookiefile"] = cookie_path
+
     return opts
 
 
-# ─── دالة مساعدة: إيجاد الملف المحمّل ──────────────────────────────────────
+# ─── إيجاد الملف بعد التحميل ─────────────────────────────────────────────────
 
 def _find_downloaded_file(output_template: str) -> Optional[str]:
-    """
-    ابحث عن الملف الذي حمّله yt-dlp بناءً على قالب الاسم.
-    yt-dlp قد يضيف امتداداً مختلفاً، لذا نبحث بالـ prefix.
-    """
-    base = output_template.replace("%(ext)s", "")
+    """ابحث عن الملف الذي أنشأه yt-dlp بناءً على الـ prefix."""
+    base      = output_template.replace("%(ext)s", "")
     directory = os.path.dirname(base)
-    prefix = os.path.basename(base)
-
+    prefix    = os.path.basename(base)
     try:
         for fname in os.listdir(directory):
             if fname.startswith(prefix):
@@ -94,27 +74,23 @@ def _find_downloaded_file(output_template: str) -> Optional[str]:
 
 async def download_video(url: str, quality_key: str) -> Optional[str]:
     """
-    حمّل الفيديو من يوتيوب بالجودة المطلوبة.
-
-    Args:
-        url: رابط الفيديو
-        quality_key: مفتاح الجودة من VIDEO_QUALITIES (144p, 360p, 720p, best)
+    حمّل الفيديو من يوتيوب.
 
     Returns:
-        مسار الملف المحمّل، أو None عند الفشل، أو "TOO_LARGE" إذا تجاوز الحد
+        مسار الملف | "TOO_LARGE" | None عند الفشل
     """
     ensure_download_dir()
 
-    file_id = uuid.uuid4().hex
-    output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
-    format_selector = VIDEO_QUALITIES.get(quality_key, VIDEO_QUALITIES["best"])
+    file_id          = uuid.uuid4().hex
+    output_template  = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
+    format_selector  = VIDEO_QUALITIES.get(quality_key, VIDEO_QUALITIES["best"])
 
     ydl_opts = {
         **_base_opts(),
-        "format": format_selector,
-        "outtmpl": output_template,
-        "merge_output_format": "mp4",
-        "max_filesize": MAX_BYTES,
+        "format":               format_selector,
+        "outtmpl":              output_template,
+        "merge_output_format":  "mp4",
+        "max_filesize":         MAX_BYTES,
     }
 
     try:
@@ -122,13 +98,12 @@ async def download_video(url: str, quality_key: str) -> Optional[str]:
         await loop.run_in_executor(None, _run_ydl, ydl_opts, url)
 
         file_path = _find_downloaded_file(output_template)
-
         if not file_path or not os.path.exists(file_path):
-            logger.error("لم يُعثر على الملف بعد التحميل")
+            logger.error("لم يُعثر على الملف بعد تحميل الفيديو")
             return None
 
         size = os.path.getsize(file_path)
-        logger.info(f"✅ تم تحميل الفيديو: {file_path} ({human_readable_size(size)})")
+        logger.info(f"✅ فيديو جاهز: {file_path} ({human_readable_size(size)})")
 
         if size > MAX_BYTES:
             logger.warning(f"الملف كبير جداً: {human_readable_size(size)}")
@@ -137,10 +112,10 @@ async def download_video(url: str, quality_key: str) -> Optional[str]:
         return file_path
 
     except yt_dlp.utils.DownloadError as e:
-        logger.error(f"خطأ yt-dlp أثناء التحميل: {e}")
+        logger.error(f"خطأ yt-dlp (فيديو): {e}")
         return None
     except Exception as e:
-        logger.error(f"خطأ غير متوقع أثناء تحميل الفيديو: {e}")
+        logger.error(f"خطأ غير متوقع (فيديو): {e}")
         return None
 
 
@@ -148,27 +123,24 @@ async def download_video(url: str, quality_key: str) -> Optional[str]:
 
 async def download_audio(url: str) -> Optional[str]:
     """
-    حمّل الصوت فقط من يوتيوب بصيغة MP3.
-
-    Args:
-        url: رابط الفيديو
+    حمّل الصوت بصيغة MP3.
 
     Returns:
-        مسار ملف الصوت المحمّل، أو None عند الفشل
+        مسار الملف | "TOO_LARGE" | None عند الفشل
     """
     ensure_download_dir()
 
-    file_id = uuid.uuid4().hex
+    file_id         = uuid.uuid4().hex
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
 
     ydl_opts = {
         **_base_opts(),
-        "format": "bestaudio/best",
+        "format":  "bestaudio/best",
         "outtmpl": output_template,
         "postprocessors": [
             {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": AUDIO_FORMAT,
+                "key":              "FFmpegExtractAudio",
+                "preferredcodec":   AUDIO_FORMAT,
                 "preferredquality": AUDIO_QUALITY,
             }
         ],
@@ -178,8 +150,8 @@ async def download_audio(url: str) -> Optional[str]:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _run_ydl, ydl_opts, url)
 
+        # بعد FFmpeg يكون الامتداد mp3
         expected_path = os.path.join(DOWNLOAD_DIR, f"{file_id}.mp3")
-
         if os.path.exists(expected_path):
             file_path = expected_path
         else:
@@ -190,7 +162,7 @@ async def download_audio(url: str) -> Optional[str]:
             return None
 
         size = os.path.getsize(file_path)
-        logger.info(f"✅ تم تحميل الصوت: {file_path} ({human_readable_size(size)})")
+        logger.info(f"✅ صوت جاهز: {file_path} ({human_readable_size(size)})")
 
         if size > MAX_BYTES:
             return "TOO_LARGE"
@@ -198,16 +170,16 @@ async def download_audio(url: str) -> Optional[str]:
         return file_path
 
     except yt_dlp.utils.DownloadError as e:
-        logger.error(f"خطأ yt-dlp أثناء تحميل الصوت: {e}")
+        logger.error(f"خطأ yt-dlp (صوت): {e}")
         return None
     except Exception as e:
-        logger.error(f"خطأ غير متوقع أثناء تحميل الصوت: {e}")
+        logger.error(f"خطأ غير متوقع (صوت): {e}")
         return None
 
 
-# ─── دالة مساعدة للتشغيل المتزامن ───────────────────────────────────────────
+# ─── تشغيل yt-dlp بشكل متزامن ────────────────────────────────────────────────
 
 def _run_ydl(opts: dict, url: str) -> None:
-    """شغّل yt-dlp بشكل متزامن (يُستدعى من executor)."""
+    """يُستدعى من run_in_executor لتجنب تعطيل event loop."""
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
