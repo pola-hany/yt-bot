@@ -24,3 +24,13 @@ VIDEO_QUALITIES: dict = {
 # جودة الصوت
 AUDIO_FORMAT: str = "mp3"
 AUDIO_QUALITY: str = "192"
+
+# ─── إعدادات Cookies (لتجاوز حماية يوتيوب) ──────────────────────────────────
+# الخيار 1: ملف cookies.txt (يدوي - الأكثر استقراراً على السيرفر)
+#   → ضع ملف cookies.txt في مجلد المشروع
+#   → أو حدد المسار الكامل هنا
+COOKIES_FILE: str = os.getenv("COOKIES_FILE", "cookies.txt")
+
+# الخيار 2: استخراج تلقائي من المتصفح (يعمل على جهازك المحلي فقط)
+#   القيم المتاحة: "chrome" | "firefox" | "edge" | "safari" | "" (معطّل)
+COOKIES_FROM_BROWSER: str = os.getenv("COOKIES_FROM_BROWSER", "")

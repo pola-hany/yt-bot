@@ -11,13 +11,63 @@ from typing import Optional
 
 import yt_dlp
 
-from config import DOWNLOAD_DIR, VIDEO_QUALITIES, AUDIO_FORMAT, AUDIO_QUALITY, MAX_FILE_SIZE_MB
+from config import (
+    DOWNLOAD_DIR, VIDEO_QUALITIES, AUDIO_FORMAT, AUDIO_QUALITY,
+    MAX_FILE_SIZE_MB, COOKIES_FILE, COOKIES_FROM_BROWSER,
+)
 from utils import ensure_download_dir, human_readable_size
 
 logger = logging.getLogger(__name__)
 
 # الحد الأقصى للحجم بالبايت
 MAX_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+
+
+# ─── بناء خيارات الـ Cookies ─────────────────────────────────────────────────
+
+def _cookies_opts() -> dict:
+    """
+    أرجع خيارات الـ cookies المناسبة حسب الإعداد في config.py.
+
+    الأولوية:
+    1. cookies_from_browser  (جهاز محلي)
+    2. cookiefile            (ملف يدوي — مناسب للسيرفر)
+    3. لا شيء                (بدون cookies)
+    """
+    if COOKIES_FROM_BROWSER:
+        logger.info(f"🍪 استخدام cookies من المتصفح: {COOKIES_FROM_BROWSER}")
+        return {"cookiesfrombrowser": (COOKIES_FROM_BROWSER,)}
+
+    if COOKIES_FILE and os.path.exists(COOKIES_FILE):
+        logger.info(f"🍪 استخدام ملف cookies: {COOKIES_FILE}")
+        return {"cookiefile": COOKIES_FILE}
+
+    logger.warning("⚠️ لا توجد cookies — قد يفشل التحميل لبعض الفيديوهات")
+    return {}
+
+
+# ─── إعدادات yt-dlp المشتركة ─────────────────────────────────────────────────
+
+def _base_opts() -> dict:
+    """الخيارات الأساسية المشتركة بين تحميل الفيديو والصوت."""
+    opts = {
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": 30,
+        # إعدادات لتقليل احتمال الحظر
+        "extractor_args": {"youtube": {"player_client": ["web"]}},
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    }
+    opts.update(_cookies_opts())
+    return opts
 
 
 # ─── دالة مساعدة: إيجاد الملف المحمّل ──────────────────────────────────────
@@ -51,38 +101,23 @@ async def download_video(url: str, quality_key: str) -> Optional[str]:
         quality_key: مفتاح الجودة من VIDEO_QUALITIES (144p, 360p, 720p, best)
 
     Returns:
-        مسار الملف المحمّل، أو None عند الفشل
+        مسار الملف المحمّل، أو None عند الفشل، أو "TOO_LARGE" إذا تجاوز الحد
     """
     ensure_download_dir()
 
-    # اسم فريد لتجنب تعارض الملفات
     file_id = uuid.uuid4().hex
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
-
     format_selector = VIDEO_QUALITIES.get(quality_key, VIDEO_QUALITIES["best"])
 
     ydl_opts = {
+        **_base_opts(),
         "format": format_selector,
         "outtmpl": output_template,
-        "merge_output_format": "mp4",       # دمج الفيديو والصوت بصيغة mp4
-        "noplaylist": True,                  # ملف واحد فقط
-        "quiet": True,
-        "no_warnings": True,
-        "socket_timeout": 30,
-        # تحديد حد أقصى للحجم
+        "merge_output_format": "mp4",
         "max_filesize": MAX_BYTES,
-        # إعدادات لتجنب الحظر
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
-        },
     }
 
     try:
-        # تشغيل yt-dlp في executor لعدم تعطيل event loop
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _run_ydl, ydl_opts, url)
 
@@ -127,13 +162,9 @@ async def download_audio(url: str) -> Optional[str]:
     output_template = os.path.join(DOWNLOAD_DIR, f"{file_id}.%(ext)s")
 
     ydl_opts = {
+        **_base_opts(),
         "format": "bestaudio/best",
         "outtmpl": output_template,
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
-        "socket_timeout": 30,
-        # استخراج الصوت وتحويله لـ mp3
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -141,23 +172,14 @@ async def download_audio(url: str) -> Optional[str]:
                 "preferredquality": AUDIO_QUALITY,
             }
         ],
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
-        },
     }
 
     try:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _run_ydl, ydl_opts, url)
 
-        # الصوت سيكون بامتداد mp3 بعد التحويل
         expected_path = os.path.join(DOWNLOAD_DIR, f"{file_id}.mp3")
 
-        # جرّب الاسم المتوقع أولاً، ثم ابحث
         if os.path.exists(expected_path):
             file_path = expected_path
         else:
