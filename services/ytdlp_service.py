@@ -1,28 +1,31 @@
-from telegram import Update
-from telegram.ext import ContextTypes
-from services.ytdlp_service import download_media
+import yt_dlp
 
-async def choose_quality(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+def download_media(url, media_type, quality):
+    try:
+        if media_type == "audio":
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': 'audio.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                }],
+            }
+        else:
+            if quality == "best":
+                fmt = "best"
+            else:
+                fmt = f"bestvideo[height<={quality}]+bestaudio/best"
 
-    quality = query.data
-    url = context.user_data.get("url")
-    media_type = context.user_data.get("type")
+            ydl_opts = {
+                'format': fmt,
+                'outtmpl': 'video.%(ext)s',
+            }
 
-    msg = await query.message.reply_text("⏳ جاري التحميل...")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            return ydl.prepare_filename(info)
 
-    file_path = download_media(url, media_type, quality)
-
-    if not file_path:
-        await msg.edit_text("❌ حصل خطأ")
-        return
-
-    if media_type == "video":
-        with open(file_path, "rb") as f:
-            await query.message.reply_video(f)
-    else:
-        with open(file_path, "rb") as f:
-            await query.message.reply_audio(f)
-
-    await msg.delete()
+    except Exception as e:
+        print("ERROR:", e)
+        return None
