@@ -2,7 +2,6 @@ import yt_dlp
 import os
 import base64
 
-# فك الكوكيز لو موجودة
 def load_cookies():
     cookies_b64 = os.getenv("COOKIES_B64")
     
@@ -21,7 +20,6 @@ def download_media(url, media_type, quality):
     try:
         cookie_file = load_cookies()
 
-        # اختيار الجودة
         if media_type == "audio":
             ydl_opts = {
                 'format': 'bestaudio/best',
@@ -30,6 +28,7 @@ def download_media(url, media_type, quality):
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                 }],
+                'quiet': True
             }
         else:
             if quality == "best":
@@ -40,11 +39,15 @@ def download_media(url, media_type, quality):
             ydl_opts = {
                 'format': fmt,
                 'outtmpl': 'video.%(ext)s',
+                'quiet': True
             }
 
-        # 👇 إضافة الكوكيز لو موجودة
         if cookie_file:
             ydl_opts['cookiefile'] = cookie_file
+
+        # 💥 حل مشكلة utf-8
+        ydl_opts['encoding'] = 'utf-8'
+        ydl_opts['nocheckcertificate'] = True
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
