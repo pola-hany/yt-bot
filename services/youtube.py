@@ -1,35 +1,40 @@
-import yt_dlp
-import os
-from config import VIDEO_FILE
-
+import requests
 
 def download_video(url: str):
-    """
-    تحميل فيديو من يوتيوب
-    """
     try:
-        # 🧹 لو في ملف قديم يتم مسحه
-        if os.path.exists(VIDEO_FILE):
-            os.remove(VIDEO_FILE)
+        api_url = "https://api.cobalt.tools/api/json"
 
-        # ⚙️ إعدادات التحميل (مبنية على كودك)
-        ydl_opts = {
-            'format': 'best[ext=mp4]',  # زي ما انت كاتب
-            'outtmpl': VIDEO_FILE,      # اسم ثابت من config
-            'quiet': True,              # بدون spam logs
-            'noplaylist': True          # يمنع تحميل playlist
+        payload = {
+            "url": url,
+            "vCodec": "h264",
+            "vQuality": "720",
+            "aFormat": "mp3",
+            "isAudioOnly": False
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+        headers = {
+            "Content-Type": "application/json"
+        }
 
-            # 📌 تأكد إن فيه نتيجة
-            if not info:
-                return None
+        res = requests.post(api_url, json=payload, headers=headers)
+        data = res.json()
 
-        # ✅ رجع اسم الملف
-        return VIDEO_FILE
+        # لو مفيش فيديو
+        if "url" not in data:
+            print("API ERROR:", data)
+            return None
+
+        video_url = data["url"]
+
+        # تحميل الفيديو
+        file_name = "video.mp4"
+        video = requests.get(video_url).content
+
+        with open(file_name, "wb") as f:
+            f.write(video)
+
+        return file_name
 
     except Exception as e:
-        print("YOUTUBE ERROR:", e)
+        print("YOUTUBE API ERROR:", e)
         return None
