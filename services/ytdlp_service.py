@@ -5,29 +5,33 @@ def download_media(url, media_type, quality):
     try:
         cookie_file = "cookies.txt" if os.path.exists("cookies.txt") else None
 
+        # 🎯 اختيار الجودة بشكل ذكي
         if media_type == "audio":
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': 'audio.%(ext)s',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                }],
-                'quiet': True
-            }
+            fmt = "bestaudio/best"
         else:
             if quality == "best":
-                fmt = "best"
+                fmt = "bestvideo+bestaudio/best"
             else:
                 fmt = f"bestvideo[height<={quality}]+bestaudio/best"
 
-            ydl_opts = {
-                'format': fmt,
-                'outtmpl': 'video.%(ext)s',
-                'quiet': True
-            }
+        ydl_opts = {
+            'format': fmt,
+            'outtmpl': '%(title)s.%(ext)s',
+            'quiet': True,
+            'nocheckcertificate': True,
 
-        # 👇 أهم سطر
+            # 💣 أهم حاجة
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web']
+                }
+            },
+
+            # 🔥 حل مشاكل signature
+            'compat_opts': ['no-youtube-unavailable-videos'],
+        }
+
+        # 👇 الكوكيز
         if cookie_file:
             ydl_opts['cookiefile'] = cookie_file
 
